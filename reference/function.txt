@@ -1,0 +1,214 @@
+import fs from 'fs';
+import path from 'path';
+import { Token } from './token.utils';
+import { logger } from './logger';
+
+// Define interfaces for the script master data structure
+interface OptionInfo {
+  token: number;
+  wsToken: number;
+}
+
+interface StrikeMap {
+  [strike: string]: OptionInfo;
+}
+
+interface ExpiryInfo {
+  ce: StrikeMap;
+  pe: StrikeMap;
+  day?: number;
+  month?: number;
+  year?: number;
+  expiryType?: string;
+}
+
+interface ExpiryConfig {
+  day: number;
+  month: number;
+  year: number;
+  expiryType: string;
+  lot_size?: number;
+}
+
+// Fix the IndexInfo interface to prevent string index type conflicts
+interface IndexInfo {
+  expiries: ExpiryConfig[];
+  freezeQuantity?: number;
+  wsToken?: number;
+  [expiry: string]: ExpiryInfo | ExpiryConfig[] | number | undefined;
+}
+
+interface ScripMasterData {
+  [index: string]: IndexInfo;
+}
+
+/**
+ * Gets option tokens for an index with dynamically determined center strike
+ * @param indexName The name of the index (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, BANKEX, SENSEX)
+ * @returns Array of Tokens with exchange and token number
+ */
+export function getOptionTokens(indexName: string): Token[] {
+  try {
+    // Read the script master data
+    const dataPath = path.resolve(__dirname, '../../scripMasterData.json');
+    const scripMasterData: ScripMasterData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+
+    if (!scripMasterData[indexName]) {
+      logger.error(`Index ${indexName} not found in script master data`);
+      return [];
+    }
+
+    const indexData = scripMasterData[indexName];
+    const tokens: Token[] = [];
+    const missingExpiries: string[] = [];
+
+    // Determine exchange based on index name
+    const exchange = indexName === 'BANKEX' || indexName === 'SENSEX' ? 'BFO' : 'NFO';
+
+    // Sort expiries by date (closest first)
+    const sortedExpiries = [...indexData.expiries].sort((a, b) => {
+      const dateA = new Date(a.year, a.month - 1, a.day);
+      const dateB = new Date(b.year, b.month - 1, b.day);
+      return dateA.getTime() - dateB.getTime();
+    });
+
+    // Process each expiry
+    sortedExpiries.forEach((expiry, idx) => {
+      // Format month with leading zero if needed
+      const month = expiry.month.toString().padStart(2, '0');
+      const day = expiry.day.toString().padStart(2, '0');
+      const expiryKey = `${day}-${month}-${expiry.year}`;
+      const expiryData = indexData[expiryKey] as ExpiryInfo;
+
+      if (!expiryData || !expiryData.ce || !expiryData.pe) {
+        // Collect missing expiry rather than logging each one
+        missingExpiries.push(expiryKey);
+        return;
+      }
+
+      // Get all strikes for CE
+      const allStrikes = Object.keys(expiryData.ce)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+      if (allStrikes.length === 0) {
+        logger.warn(`No strikes found for ${indexName} at expiry ${expiryKey}`);
+        return;
+      }
+
+      // Find the middle strike (center point of available strikes)
+      const middleIndex = Math.floor(allStrikes.length / 2);
+
+      // Determine how many strikes to get on each side based on whether this is the closest expiry
+      const strikesToGet = idx === 0 ? 40 : 20;
+
+      // Calculate the range of indices to extract
+      const startIdx = Math.max(0, middleIndex - strikesToGet);
+      const endIdx = Math.min(allStrikes.length - 1, middleIndex + strikesToGet);
+
+      // Get the subset of strikes
+      const selectedStrikes = allStrikes.slice(startIdx, endIdx + 1);
+
+      logger.info(
+        `${indexName} ${expiryKey}: Processing ${selectedStrikes.length} strikes around center strike ${allStrikes[middleIndex]}`
+      );
+
+      // Extract CE tokens
+      selectedStrikes.forEach((strike) => {
+        const strikeStr = strike.toString();
+        if (expiryData.ce[strikeStr]) {
+          tokens.push({
+            exchange,
+            tokenNumber: expiryData.ce[strikeStr].token,
+          });
+        }
+      });
+
+      // Extract PE tokens
+      selectedStrikes.forEach((strike) => {
+        const strikeStr = strike.toString();
+        if (expiryData.pe[strikeStr]) {
+          tokens.push({
+            exchange,
+            tokenNumber: expiryData.pe[strikeStr].token,
+          });
+        }
+      });
+    });
+
+    // Log a summary of missing expiries instead of individual warnings
+    if (missingExpiries.length > 0) {
+      logger.warn(
+        `${indexName}: Missing or incomplete data for ${missingExpiries.length} expiries`
+      );
+      logger.debug(`${indexName}: Missing expiries: ${missingExpiries.join(', ')}`);
+    }
+
+    logger.info(`Retrieved ${tokens.length} tokens for ${indexName}`);
+    return tokens;
+  } catch (error) {
+    logger.error(`Error getting tokens for ${indexName}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Gets option tokens for all indices
+ * @returns Array of Tokens with exchange and token number for all indices
+ */
+export function getAllOptionTokens(): Token[] {
+  // Add any additional indices that might be in your scripMasterData.json
+  const indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
+
+  let allTokens: Token[] = [];
+
+  for (const index of indices) {
+    const indexTokens = getOptionTokens(index);
+    allTokens = [...allTokens, ...indexTokens];
+  }
+
+  logger.info(`Total number of option tokens: ${allTokens.length}`);
+  return allTokens;
+}
+
+/**
+ * Batch subscribes to tokens with rate limiting
+ * @param upstoxService The UpstoxService instance
+ * @param tokens Array of tokens to subscribe to
+ * @param batchSize Number of tokens to subscribe in each batch
+ * @param delayMs Delay between batches in milliseconds
+ */
+export async function batchSubscribeToTokens(
+  upstoxService: any,
+  tokens: Token[],
+  batchSize = 50,
+  delayMs = 300
+): Promise<void> {
+  logger.info(
+    `Batch subscribing to ${tokens.length} tokens, batch size: ${batchSize}, delay: ${delayMs}ms`
+  );
+
+  for (let i = 0; i < tokens.length; i += batchSize) {
+    const batch = tokens.slice(i, i + batchSize);
+
+    logger.info(
+      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
+        tokens.length / batchSize
+      )}, tokens: ${batch.length}`
+    );
+
+    try {
+      // Subscribe to entire batch at once instead of individual tokens
+      await upstoxService.subscribe(batch);
+    } catch (error) {
+      logger.error(`Failed to subscribe to batch ${i / batchSize + 1}:`, error);
+    }
+
+    // Wait before processing the next batch
+    if (i + batchSize < tokens.length) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  logger.info('Batch subscription complete');
+}
