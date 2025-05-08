@@ -114,7 +114,7 @@ class MQTTService {
             return;
         }
         const fullTopic = `${this.topicPrefix}${topic}`;
-        // Use QoS 0 for maximum throughput
+        console.log(`Publishing message to topic: ${fullTopic}`, message);
         this.client.publish(fullTopic, JSON.stringify(message), {
             retain: true,
             properties: {

@@ -104,20 +104,32 @@ class TokenService {
             const results = [];
             fs.createReadStream(this.csvPath)
                 .pipe(csvParser())
-                .on('data', (data) => results.push(data))
+                .on('data', (data) => {
+                results.push(data);
+            })
                 .on('end', () => {
                 console.log(`Loaded ${results.length} records from CSV`);
                 let matchedCount = 0;
+                // Update LTP for each token
                 allTokens.forEach(token => {
                     const match = results.find(row => {
-                        return row.exchangeSegment === String(token.tokenNumber);
+                        // Extract token number from symbolCode (e.g., "3880_NSE" -> "3880")
+                        const tokenNumber = row.symbolCode.split('_')[0];
+                        const isMatch = String(tokenNumber) === String(token.tokenNumber);
+                        return isMatch;
                     });
                     if (match) {
-                        token.ltp = parseFloat(match.lastPrice) || 0;
-                        matchedCount++;
+                        const parsedPrice = parseFloat(match.lastPrice);
+                        if (!isNaN(parsedPrice)) {
+                            token.ltp = parsedPrice;
+                            matchedCount++;
+                        }
+                        else {
+                            console.log(`Invalid price for token ${token.tokenNumber}: ${match.lastPrice}`);
+                        }
                     }
                 });
-                console.log(`Matched ${matchedCount} tokens with LTP values`);
+                console.log(`Total matched tokens: ${matchedCount}`);
                 this.tokens = allTokens;
                 resolve(allTokens);
             })
