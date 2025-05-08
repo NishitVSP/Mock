@@ -1,12 +1,20 @@
 import mqtt from 'mqtt';
+import dotenv from 'dotenv';
+// Load environment variables
+dotenv.config();
 class MQTTService {
     constructor() {
         this.client = null;
         this.isConnecting = false;
         this.reconnectTimer = null;
-        this.brokerUrl = 'wss://emqx.trado.trade/mqtt';
-        this.username = 'user_ashish';
-        this.password = 'Ashish@123';
+        // Get credentials from environment variables
+        this.brokerUrl = process.env.MQTT_BROKER_URL || '';
+        this.username = process.env.MQTT_USERNAME || '';
+        this.password = process.env.MQTT_PASSWORD || '';
+        // Validate required environment variables
+        if (!this.brokerUrl || !this.username || !this.password) {
+            throw new Error('Missing required MQTT environment variables');
+        }
     }
     async connect() {
         if (this.client?.connected)
@@ -20,7 +28,9 @@ class MQTTService {
                 password: this.password,
                 clean: true,
                 reconnectPeriod: 1000,
-                connectTimeout: 30000
+                connectTimeout: 30000,
+                protocol: 'wss',
+                rejectUnauthorized: false
             };
             console.log('Connecting to MQTT broker with options:', { url: this.brokerUrl, username: this.username });
             this.client = mqtt.connect(this.brokerUrl, options);
@@ -54,7 +64,7 @@ class MQTTService {
                 reject(new Error('MQTT client not initialized'));
                 return;
             }
-            this.client.publish(topic, JSON.stringify(message), (error) => {
+            this.client.publish(`mock/token.${topic}`, JSON.stringify(message), (error) => {
                 if (error) {
                     reject(error);
                 }
