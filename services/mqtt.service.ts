@@ -1,4 +1,8 @@
 import mqtt from 'mqtt';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 class MQTTService {
   private client: mqtt.MqttClient | null = null;
@@ -9,9 +13,15 @@ class MQTTService {
   private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    this.brokerUrl = 'wss://emqx.trado.trade/mqtt';
-    this.username = 'user_ashish';
-    this.password = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InVzZXJfYXNoaXNoIiwiaWF0IjoxNzQ2NjA3NDYyfQ.0fJoZRLYowKV7F35OMThb6OjA4BwzLyNT5GTbn_jn04';
+    // Get credentials from environment variables
+    this.brokerUrl = process.env.MQTT_BROKER_URL || '';
+    this.username = process.env.MQTT_USERNAME || '';
+    this.password = process.env.MQTT_PASSWORD || '';
+
+    // Validate required environment variables
+    if (!this.brokerUrl || !this.username || !this.password) {
+      throw new Error('Missing required MQTT environment variables');
+    }
   }
 
   async connect(): Promise<void> {
