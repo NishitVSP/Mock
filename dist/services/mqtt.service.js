@@ -7,6 +7,11 @@ class MQTTService {
         this.client = null;
         this.isConnecting = false;
         this.reconnectTimer = null;
+        this.maxReconnectAttempts = 5;
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 5000; // 5 seconds
+        this.topicPrefix = 'mock/';
+        this.isShuttingDown = false;
         // Get credentials from environment variables
         this.brokerUrl = process.env.MQTT_BROKER_URL || '';
         this.username = process.env.MQTT_USERNAME || '';
@@ -16,10 +21,29 @@ class MQTTService {
             throw new Error('Missing required MQTT environment variables');
         }
     }
+    async reconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts || this.isShuttingDown) {
+            console.error('Max reconnection attempts reached or shutting down');
+            return;
+        }
+        this.reconnectAttempts++;
+        console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+        try {
+            await this.connect();
+            this.reconnectAttempts = 0; // Reset counter on successful connection
+        }
+        catch (error) {
+            console.error('Reconnection failed:', error);
+            // Schedule next reconnection attempt
+            this.reconnectTimer = setTimeout(() => this.reconnect(), this.reconnectDelay);
+        }
+    }
     async connect() {
         if (this.client?.connected)
             return;
         if (this.isConnecting)
+            return;
+        if (this.isShuttingDown)
             return;
         this.isConnecting = true;
         return new Promise((resolve, reject) => {
@@ -27,54 +51,82 @@ class MQTTService {
                 username: this.username,
                 password: this.password,
                 clean: true,
-                reconnectPeriod: 1000,
+                reconnectPeriod: 0, // Disable automatic reconnection
                 connectTimeout: 30000,
                 protocol: 'wss',
-                rejectUnauthorized: false
+                rejectUnauthorized: false,
+                keepalive: 60,
+                clientId: `mqtt_client_${Date.now()}`, // Unique client ID
+                queueQoSZero: false, // Don't queue QoS 0 messages
+                resubscribe: false // Don't resubscribe on reconnect
             };
             console.log('Connecting to MQTT broker with options:', { url: this.brokerUrl, username: this.username });
-            this.client = mqtt.connect(this.brokerUrl, options);
-            this.client.on('connect', () => {
-                console.log('Connected to MQTT broker');
-                this.isConnecting = false;
-                resolve();
-            });
-            this.client.on('error', (error) => {
-                if (!this.isConnecting) {
-                    console.error('MQTT connection error:', error);
-                }
-                this.isConnecting = false;
-                reject(error);
-            });
-            this.client.on('close', () => {
-                console.log('MQTT connection closed');
-                this.isConnecting = false;
-            });
-            this.client.on('reconnect', () => {
-                console.log('Attempting to reconnect to MQTT broker...');
-            });
+            if (this.client) {
+                this.client.end(true, () => {
+                    this.client = null;
+                    this.setupClient(options, resolve, reject);
+                });
+            }
+            else {
+                this.setupClient(options, resolve, reject);
+            }
+        });
+    }
+    setupClient(options, resolve, reject) {
+        this.client = mqtt.connect(this.brokerUrl, options);
+        // Set max listeners
+        this.client.setMaxListeners(20);
+        this.client.on('connect', () => {
+            console.log('Connected to MQTT broker');
+            this.isConnecting = false;
+            this.reconnectAttempts = 0;
+            resolve();
+        });
+        this.client.on('error', (error) => {
+            if (!this.isConnecting) {
+                console.error('MQTT connection error:', error);
+            }
+            this.isConnecting = false;
+            reject(error);
+        });
+        this.client.on('close', () => {
+            console.log('MQTT connection closed');
+            this.isConnecting = false;
+            if (!this.isShuttingDown) {
+                this.reconnect();
+            }
+        });
+        this.client.on('offline', () => {
+            console.log('MQTT client went offline');
+            if (!this.isShuttingDown) {
+                this.reconnect();
+            }
         });
     }
     async publish(topic, message) {
+        if (this.isShuttingDown) {
+            return;
+        }
         if (!this.client?.connected) {
             await this.connect();
         }
-        return new Promise((resolve, reject) => {
-            if (!this.client) {
-                reject(new Error('MQTT client not initialized'));
-                return;
+        if (!this.client) {
+            return;
+        }
+        const fullTopic = `${this.topicPrefix}${topic}`;
+        // Use QoS 0 for maximum throughput
+        this.client.publish(fullTopic, JSON.stringify(message), {
+            retain: true,
+            properties: {
+                messageExpiryInterval: 3000 // Message expires after 3 seconds
             }
-            this.client.publish(`mock/token.${topic}`, JSON.stringify(message), (error) => {
-                if (error) {
-                    reject(error);
-                }
-                else {
-                    resolve();
-                }
-            });
         });
     }
     async disconnect() {
+        if (this.isShuttingDown)
+            return;
+        this.isShuttingDown = true;
+        console.log('Disconnecting MQTT client...');
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -83,10 +135,14 @@ class MQTTService {
             if (this.client) {
                 this.client.end(true, () => {
                     this.client = null;
+                    this.isShuttingDown = false;
+                    console.log('MQTT client disconnected successfully');
                     resolve();
                 });
             }
             else {
+                this.isShuttingDown = false;
+                console.log('No MQTT client to disconnect');
                 resolve();
             }
         });

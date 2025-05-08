@@ -1,17 +1,30 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
+import fetch from 'node-fetch';
 class TokenService {
     constructor() {
         this.tokens = [];
-        this.jsonPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\reference\\scripMasterData.json";
-        this.csvPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\Upstox_Scripmaster.csv";
+        this.jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
+        this.csvPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\ScripMaster.csv";
         this.indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
     }
-    getScripMasterData() {
-        return JSON.parse(fs.readFileSync(this.jsonPath, 'utf8'));
+    async getScripMasterData() {
+        try {
+            const response = await fetch(this.jsonUrl);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            return data;
+        }
+        catch (error) {
+            console.error('Error fetching scrip master data:', error);
+            // Return empty object as fallback
+            return {};
+        }
     }
-    getOptionTokens(indexName) {
-        const scripMasterData = this.getScripMasterData();
+    async getOptionTokens(indexName) {
+        const scripMasterData = await this.getScripMasterData();
         if (!scripMasterData[indexName]) {
             console.error(`Index ${indexName} not found in script master data`);
             return [];
@@ -80,11 +93,11 @@ class TokenService {
         console.log("Loading tokens from JSON and CSV files");
         // Get option tokens for all indexes
         const allTokens = [];
-        this.indexes.forEach(indexName => {
-            const indexTokens = this.getOptionTokens(indexName);
+        for (const indexName of this.indexes) {
+            const indexTokens = await this.getOptionTokens(indexName);
             console.log(`Loaded ${indexTokens.length} tokens for ${indexName}`);
             allTokens.push(...indexTokens);
-        });
+        }
         console.log(`Total tokens before LTP update: ${allTokens.length}`);
         // Fetch LTP values from CSV
         return new Promise((resolve, reject) => {
@@ -96,10 +109,11 @@ class TokenService {
                 console.log(`Loaded ${results.length} records from CSV`);
                 let matchedCount = 0;
                 allTokens.forEach(token => {
-                    const match = results.find(row => row.exchange_token === String(token.tokenNumber) &&
-                        row.exchange === token.exchange);
+                    const match = results.find(row => {
+                        return row.exchangeSegment === String(token.tokenNumber);
+                    });
                     if (match) {
-                        token.ltp = parseFloat(match.last_price) || 0;
+                        token.ltp = parseFloat(match.lastPrice) || 0;
                         matchedCount++;
                     }
                 });

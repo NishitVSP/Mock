@@ -20,6 +20,7 @@ interface MarketData {
 function performTask(tokens: Token[]): MarketData[] {
   return tokens.map(token => {
     const { newPrice, fluctuationPercent } = generateRandomFluctuation(token.ltp);
+    // console.log(`Worker ${workerData.workerId} - Token: ${token.tokenNumber}, New Price: ${newPrice}, Fluctuation: ${fluctuationPercent}%`);
     return {
       workerId: workerData.workerId,
       exchange: token.exchange,

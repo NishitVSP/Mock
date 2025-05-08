@@ -5,15 +5,6 @@ import tokenService from './services/token.service.js';
 import process from 'process';
 
 
-interface MarketData {
-  workerId: number;
-  exchange: string;
-  tokenNumber: string;
-  value: number;
-  fluctuationPercent: number;
-  timestamp: number;
-}
-
 async function main() {
   try {
     // 1. Load tokens from JSON and update LTP from CSV

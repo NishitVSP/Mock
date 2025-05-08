@@ -1,5 +1,6 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
+import fetch from 'node-fetch';
 
 interface Token {
   exchange: string;
@@ -25,16 +26,27 @@ interface ScripMasterData {
 
 class TokenService {
   private tokens: Token[] = [];
-  private readonly jsonPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\reference\\scripMasterData.json";
-  private readonly csvPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\Upstox_Scripmaster.csv";
+  private readonly jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
+  private readonly csvPath = "C:\\Users\\Lenovo\\Desktop\\programming\\src_typescript\\ScripMaster.csv";
   private readonly indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
 
-  private getScripMasterData(): ScripMasterData {
-    return JSON.parse(fs.readFileSync(this.jsonPath, 'utf8'));
+  private async getScripMasterData(): Promise<ScripMasterData> {
+    try {
+      const response = await fetch(this.jsonUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json() as ScripMasterData;
+      return data;
+    } catch (error) {
+      console.error('Error fetching scrip master data:', error);
+      // Return empty object as fallback
+      return {} as ScripMasterData;
+    }
   }
 
-  private getOptionTokens(indexName: string): Token[] {
-    const scripMasterData = this.getScripMasterData();
+  private async getOptionTokens(indexName: string): Promise<Token[]> {
+    const scripMasterData = await this.getScripMasterData();
 
     if (!scripMasterData[indexName]) {
       console.error(`Index ${indexName} not found in script master data`);
@@ -44,7 +56,6 @@ class TokenService {
     const indexData = scripMasterData[indexName];
     const tokens: Token[] = [];
     const missingExpiries: string[] = [];
-
     const exchange = indexName === 'BANKEX' || indexName === 'SENSEX' ? 'BSE_FO' : 'NSE_FO';
 
     const sortedExpiries = [...indexData.expiries].sort((a, b) => {
@@ -115,39 +126,34 @@ class TokenService {
 
   async loadTokens(): Promise<Token[]> {
     console.log("Loading tokens from JSON and CSV files");
-    
     // Get option tokens for all indexes
     const allTokens: Token[] = [];
-    this.indexes.forEach(indexName => {
-      const indexTokens = this.getOptionTokens(indexName);
+    for (const indexName of this.indexes) {
+      const indexTokens = await this.getOptionTokens(indexName);
       console.log(`Loaded ${indexTokens.length} tokens for ${indexName}`);
       allTokens.push(...indexTokens);
-    });
+    }
 
     console.log(`Total tokens before LTP update: ${allTokens.length}`);
 
     // Fetch LTP values from CSV
     return new Promise((resolve, reject) => {
       const results: any[] = [];
-
       fs.createReadStream(this.csvPath)
         .pipe(csvParser())
         .on('data', (data) => results.push(data))
         .on('end', () => {
           console.log(`Loaded ${results.length} records from CSV`);
-          
           let matchedCount = 0;
           allTokens.forEach(token => {
-            const match = results.find(row => 
-              row.exchange_token === String(token.tokenNumber) && 
-              row.exchange === token.exchange
-            );
+            const match = results.find(row => {
+              return row.exchangeSegment === String(token.tokenNumber);
+            });
             if (match) {
-              token.ltp = parseFloat(match.last_price) || 0;
+              token.ltp = parseFloat(match.lastPrice) || 0;
               matchedCount++;
             }
           });
-
           console.log(`Matched ${matchedCount} tokens with LTP values`);
           this.tokens = allTokens;
           resolve(allTokens);
@@ -168,4 +174,4 @@ class TokenService {
   }
 }
 
-export default new TokenService(); 
+export default new TokenService();

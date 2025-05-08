@@ -4,6 +4,7 @@ import { generateRandomFluctuation } from '../utils/fluctuationSimulator.js';
 function performTask(tokens) {
     return tokens.map(token => {
         const { newPrice, fluctuationPercent } = generateRandomFluctuation(token.ltp);
+        // console.log(`Worker ${workerData.workerId} - Token: ${token.tokenNumber}, New Price: ${newPrice}, Fluctuation: ${fluctuationPercent}%`);
         return {
             workerId: workerData.workerId,
             exchange: token.exchange,

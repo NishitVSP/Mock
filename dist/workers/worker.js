@@ -22,6 +22,7 @@ class WorkerManager {
                 const workerTokens = tokens.slice(start, end);
                 if (workerTokens.length > 0) {
                     console.log(`Worker ${i + 1} will process ${workerTokens.length} tokens`);
+                    // Initialize each worker with a subset of tokens
                     promises.push(this.runWorker(workerTokens, i + 1));
                 }
             }
