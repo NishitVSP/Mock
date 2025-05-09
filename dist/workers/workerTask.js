@@ -20,5 +20,5 @@ if (parentPort) {
     setInterval(() => {
         const result = performTask(workerData.tokens);
         parentPort?.postMessage(result);
-    }, 333); // Run 3 times per second
+    }, 500); // Run 3 times per second
 }

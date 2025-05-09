@@ -4,10 +4,10 @@ interface FluctuationResult {
 }
 
 export function generateRandomFluctuation(currentPrice: number): FluctuationResult {
-  // Generate random fluctuation between -5% and +5%
-  const fluctuationPercent = (Math.random() * 10 - 5);
-  const priceChange = currentPrice * (fluctuationPercent / 100);
-  const newPrice = currentPrice + priceChange;
+  // Generate a random fluctuation between -0.5% and +0.5%
+  const fluctuationPercent = (Math.random() - 0.5) * 1;
+  const fluctuationAmount = currentPrice * (fluctuationPercent / 100);
+  const newPrice = currentPrice + fluctuationAmount;
 
   return {
     newPrice: Number(newPrice.toFixed(2)),

@@ -1,7 +1,8 @@
 import { Worker } from 'worker_threads';
 import os from 'os';
 import tokenService from '../services/token.service.js';
-import mqttService from '../services/mqtt.service.js';
+import mqttConnection from '../connections/mqtt.connection.js';
+import publisherService from '../services/publisher.service.js';
 
 interface Token {
   exchange: string;
@@ -43,7 +44,7 @@ class WorkerManager {
 
     try {
       // Connect to MQTT before starting workers
-      await mqttService.connect();
+      await mqttConnection.connect();
       console.log('Connected to MQTT broker');
 
       // Initialize token workers
@@ -72,7 +73,7 @@ class WorkerManager {
 
   private runIndexWorker(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const worker = new Worker('./dist/workers/indexWorkerTask.js');
+      const worker = new Worker('./dist/workers/index.worker.js');
 
       worker.on('message', async (result: IndexData[]) => {
         if (this.isShuttingDown) return;
@@ -80,14 +81,13 @@ class WorkerManager {
         try {
           // Process and publish each index's data
           for (const data of result) {
-            const topic = `mock/${data.indexName}`;
             const message = {
               value: data.value,
               fluctuation: data.fluctuationPercent,
               timestamp: data.timestamp
             };
             
-            await mqttService.publish(topic, message);
+            await publisherService.publishIndexData(data.indexName, message);
           }
 
           console.log(
@@ -122,7 +122,7 @@ class WorkerManager {
 
   private runWorker(tokens: Token[], workerId: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const worker = new Worker('./dist/workers/workerTask.js', {
+      const worker = new Worker('./dist/workers/token.worker.js', {
         workerData: { tokens, workerId }
       });
 
@@ -132,14 +132,13 @@ class WorkerManager {
         try {
           // Process and publish each token's data
           for (const data of result) {
-            const topic = `${data.exchange}_${data.tokenNumber}`;
             const message = {
               value: data.value,
               fluctuation: data.fluctuationPercent,
               timestamp: data.timestamp
             };
             
-            await mqttService.publish(topic, message);
+            await publisherService.publishTokenData(data.exchange, data.tokenNumber, message);
           }
 
           // Log summary
@@ -191,7 +190,7 @@ class WorkerManager {
       }
 
       // Disconnect MQTT after workers are terminated
-      await mqttService.disconnect();
+      await mqttConnection.disconnect();
       console.log('All workers terminated and MQTT disconnected');
     } catch (error) {
       console.error('Error during cleanup:', error);
@@ -201,4 +200,4 @@ class WorkerManager {
   }
 }
 
-export default WorkerManager; 
+export default new WorkerManager(); 
