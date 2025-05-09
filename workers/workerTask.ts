@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { generateRandomFluctuation } from '../utils/fluctuationSimulator.js';
+import logger from '../utils/logger.js';
 
 interface Token {
   exchange: string;
@@ -20,7 +21,8 @@ interface MarketData {
 function performTask(tokens: Token[]): MarketData[] {
   return tokens.map(token => {
     const { newPrice, fluctuationPercent } = generateRandomFluctuation(token.ltp);
-    // console.log(`Worker ${workerData.workerId} - Token: ${token.tokenNumber}, New Price: ${newPrice}, Fluctuation: ${fluctuationPercent}%`);
+    logger.debug(`[Token Worker ${workerData.workerId}] Processing ${token.exchange}_${token.tokenNumber}: Current Price: ${token.ltp}, New Price: ${newPrice}, Fluctuation: ${fluctuationPercent}%`);
+    
     return {
       workerId: workerData.workerId,
       exchange: token.exchange,
@@ -32,10 +34,11 @@ function performTask(tokens: Token[]): MarketData[] {
   });
 }
 
-// Continuously perform the task at 333ms intervals (3 times per second)
+// Continuously perform the task at 500ms intervals
 if (parentPort) {
+  logger.info(`[Token Worker ${workerData.workerId}] Starting token data generation for ${workerData.tokens.length} tokens...`);
   setInterval(() => {
     const result = performTask(workerData.tokens);
     parentPort?.postMessage(result);
-  }, 500); // Run 3 times per second
+  }, 500);
 } 

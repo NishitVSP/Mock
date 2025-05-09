@@ -3,29 +3,56 @@ import WorkerManager from './workers/worker.js';
 import mqttService from './services/mqtt.service.js';
 import tokenService from './services/token.service.js';
 import process from 'process';
+import logger from './utils/logger.js';
 
+// Declare global type
+declare global {
+  var workerManager: WorkerManager;
+}
+
+let isShuttingDown = false;
+
+async function shutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info(`\nReceived ${signal}. Shutting down gracefully...`);
+  
+  try {
+    // First terminate all workers
+    if (global.workerManager) {
+      await global.workerManager.terminateAllWorkers();
+    }
+    
+    // Then disconnect MQTT
+    await mqttService.disconnect();
+    
+    logger.info('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
 
 async function main() {
   try {
     // 1. Load tokens from JSON and update LTP from CSV
-    console.log('Loading tokens...');
+    logger.info('Loading tokens...');
     const tokens = await tokenService.loadTokens();
-    console.log(`Loaded ${tokens.length} tokens with LTP values`);
+    logger.info(`Loaded ${tokens.length} tokens with LTP values`);
 
     // 2. Initialize worker manager and start processing
-    const workerManager = new WorkerManager();
-    console.log('Initializing workers...');
-    await workerManager.initializeWorkers(tokens);
+    global.workerManager = new WorkerManager();
+    logger.info('Initializing workers...');
+    await global.workerManager.initializeWorkers(tokens);
 
     // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-      console.log('\nReceived SIGINT. Shutting down gracefully...');
-      await workerManager.terminateAllWorkers();
-      process.exit(0);
-    });
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   } catch (error) {
-    console.error('Error in main:', error);
+    logger.error('Error in main:', error);
     process.exit(1);
   }
 }

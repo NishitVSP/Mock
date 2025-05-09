@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { generateRandomFluctuation } from '../utils/fluctuationSimulator.js';
 import { getIndexLastPrices } from '../services/indexes.service.js';
+import logger from '../utils/logger.js';
 
 interface IndexData {
   indexName: string;
@@ -35,8 +36,11 @@ async function performTask(): Promise<IndexData[]> {
 
   for (const [indexName, currentPrice] of Object.entries(indexPrices)) {
     const { newPrice, fluctuationPercent } = generateRandomFluctuation(currentPrice);
+    const topic = getTopicForIndex(indexName);
+    logger.debug(`[Index Worker] Processing ${indexName}: Current Price: ${currentPrice}, New Price: ${newPrice}, Fluctuation: ${fluctuationPercent}%, Topic: mock/${topic}`);
+    
     result.push({
-      indexName: getTopicForIndex(indexName),
+      indexName,
       value: newPrice,
       fluctuationPercent,
       timestamp: new Date().toISOString()
@@ -48,6 +52,7 @@ async function performTask(): Promise<IndexData[]> {
 
 // Continuously perform the task at 500ms intervals
 if (parentPort) {
+  logger.info('[Index Worker] Starting index data generation...');
   setInterval(async () => {
     const result = await performTask();
     parentPort?.postMessage(result);

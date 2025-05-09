@@ -1,8 +1,8 @@
 // services\token.service.ts
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'fs';
 import csvParser from 'csv-parser';
 import fetch from 'node-fetch';
+import path from 'path';
 
 interface Token {
   exchange: string;
@@ -29,6 +29,7 @@ interface ScripMasterData {
 class TokenService {
   private tokens: Token[] = [];
   private readonly jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
+  private readonly csvPath = "C:/Users/bhula/OneDrive/Documents/Desktop/NIshit/Mock/ScripMaster.csv";
   private readonly indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
 
   private async getScripMasterData(): Promise<ScripMasterData> {
@@ -126,26 +127,59 @@ class TokenService {
   }
 
   async loadTokens(): Promise<Token[]> {
-    try {
-      const csvPath = path.join(process.cwd(), 'ScripMaster.csv');
-      const fileContent = await fs.readFile(csvPath, 'utf-8');
-      const lines = fileContent.split('\n').slice(1); // Skip header
+    // console.log("Loading tokens from JSON and CSV files");
+    const allTokens: Token[] = [];
 
-      return lines
-        .filter(line => line.trim())
-        .map(line => {
-          const [exchange, tokenNumber, ltp] = line.split(',').map(field => field.trim());
-          return {
-            exchange,
-            tokenNumber,
-            ltp: parseFloat(ltp) || 0
-          };
-        })
-        .filter(token => token.ltp > 0);
-    } catch (error) {
-      console.error('Error loading tokens:', error);
-      return [];
+    // Get option tokens for all indexes
+    for (const indexName of this.indexes) {
+      const indexTokens = await this.getOptionTokens(indexName);
+      // console.log(`Loaded ${indexTokens.length} tokens for ${indexName}`);
+      allTokens.push(...indexTokens);
     }
+
+    // console.log(`Total tokens before LTP update: ${allTokens.length}`);
+
+    // Fetch LTP values from CSV
+    return new Promise((resolve, reject) => {
+      const results: any[] = [];
+      fs.createReadStream(this.csvPath)
+        .pipe(csvParser())
+        .on('data', (data) => {
+          results.push(data);
+        })
+        .on('end', () => {
+          // console.log(`Loaded ${results.length} records from CSV`);
+
+          let matchedCount = 0;
+          // Update LTP for each token
+          allTokens.forEach(token => {
+            const match = results.find(row => {
+              // Extract token number from symbolCode (e.g., "3880_NSE" -> "3880")
+              const tokenNumber = row.symbolCode.split('_')[0];
+              const isMatch = String(tokenNumber) === String(token.tokenNumber);
+              return isMatch;
+            });
+
+            if (match) {
+              const parsedPrice = parseFloat(match.lastPrice);
+              if (!isNaN(parsedPrice)) {
+                token.ltp = parsedPrice;
+                matchedCount++;
+              } else {
+                // console.log(`Invalid price for token ${token.tokenNumber}: ${match.lastPrice}`);
+              }
+            }
+          });
+
+          // console.log(`Total matched tokens: ${matchedCount}`);
+          this.tokens = allTokens;
+          resolve(allTokens);
+        })
+        .on('error', (error: Error) => {
+          console.error('Error reading CSV file:', error);
+          reject(error);
+        });
+    });
   }
 
   getTokens(): Token[] {

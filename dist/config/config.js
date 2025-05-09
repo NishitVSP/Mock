@@ -1,41 +1,27 @@
 import dotenv from 'dotenv';
-import { z } from 'zod';
 // Load environment variables
 dotenv.config();
-// Configuration schema
-const configSchema = z.object({
-    mqtt: z.object({
-        brokerUrl: z.string().url(),
-        username: z.string(),
-        password: z.string(),
-        topicPrefix: z.string(),
-    }),
-    app: z.object({
-        logLevel: z.enum(['error', 'warn', 'info', 'debug']),
-        workerCount: z.number().int().positive(),
-        dataUpdateIntervalMs: z.number().int().positive(),
-    }),
-});
-// Default configuration
-const defaultConfig = {
+export const config = {
     mqtt: {
-        brokerUrl: 'wss://emqx.trado.trade/mqtt',
-        username: 'nishit_test',
-        password: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6Im5pc2hpdF90ZXN0IiwiaWF0IjoxNzQ2NjI4MDYyfQ.nRPgH6v1vh3Vq-o8EltGOnCckGep6SJR8arNhu0nHro',
-        topicPrefix: 'mock',
+        brokerUrl: process.env.MQTT_BROKER_URL || '',
+        username: process.env.MQTT_USERNAME || '',
+        password: process.env.MQTT_PASSWORD || '',
+        topicPrefix: 'mock/',
+        maxReconnectAttempts: 5,
+        reconnectDelay: 5000,
+        connectTimeout: 30000,
+        keepalive: 60
     },
-    app: {
-        logLevel: 'info',
-        workerCount: 4,
-        dataUpdateIntervalMs: 1000,
+    workers: {
+        tokenWorkerCount: 3,
+        updateInterval: 1000 // 1 second
     },
+    logging: {
+        level: process.env.LOG_LEVEL || 'info',
+        logDir: 'logs'
+    }
 };
-// Validate and export configuration
-const config = configSchema.parse(defaultConfig);
-// Log configuration (excluding sensitive data)
-// console.log('MQTT Configuration:', {
-//   brokerUrl: config.mqtt.brokerUrl,
-//   username: config.mqtt.username,
-//   topicPrefix: config.mqtt.topicPrefix
-// });
-export default config;
+// Validate required environment variables
+if (!config.mqtt.brokerUrl || !config.mqtt.username || !config.mqtt.password) {
+    throw new Error('Missing required MQTT environment variables');
+}
