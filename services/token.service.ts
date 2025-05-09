@@ -1,3 +1,4 @@
+// services\token.service.ts
 import fs from 'fs';
 import csvParser from 'csv-parser';
 import fetch from 'node-fetch';
@@ -8,8 +9,6 @@ interface Token {
   strike?: number;
   type?: string;
   ltp: number;
-  instrument?: string;
-  tradingSymbol?: string;
 }
 
 interface ExpiryData {
@@ -42,16 +41,19 @@ class TokenService {
       return data;
     } catch (error) {
       console.error('Error fetching scrip master data:', error);
+      // Return empty object as fallback
       return {} as ScripMasterData;
     }
   }
 
   private async getOptionTokens(indexName: string): Promise<Token[]> {
     const scripMasterData = await this.getScripMasterData();
+
     if (!scripMasterData[indexName]) {
       console.error(`Index ${indexName} not found in script master data`);
       return [];
     }
+
     const indexData = scripMasterData[indexName];
     const tokens: Token[] = [];
     const missingExpiries: string[] = [];
@@ -125,6 +127,7 @@ class TokenService {
 
   async loadTokens(): Promise<Token[]> {
     console.log("Loading tokens from JSON and CSV files");
+    // Get option tokens for all indexes
     const allTokens: Token[] = [];
     for (const indexName of this.indexes) {
       const indexTokens = await this.getOptionTokens(indexName);
@@ -134,6 +137,7 @@ class TokenService {
 
     console.log(`Total tokens before LTP update: ${allTokens.length}`);
 
+    // Fetch LTP values from CSV
     return new Promise((resolve, reject) => {
       const results: any[] = [];
       fs.createReadStream(this.csvPath)
@@ -144,24 +148,22 @@ class TokenService {
         .on('end', () => {
           console.log(`Loaded ${results.length} records from CSV`);
           let matchedCount = 0;
-
+          // Update LTP for each token
           allTokens.forEach(token => {
             const match = results.find(row => {
-              // Extract token number from symbolCode (e.g., "9219_NSE" -> "9219")
-              const tokenNumber = row.symbolCode?.split('_')[0];
-              return String(tokenNumber) === String(token.tokenNumber);
+              // Extract token number from symbolCode (e.g., "3880_NSE" -> "3880")
+              const tokenNumber = row.symbolCode.split('_')[0];
+              const isMatch = String(tokenNumber) === String(token.tokenNumber);
+              return isMatch;
             });
 
             if (match) {
               const parsedPrice = parseFloat(match.lastPrice);
-              // Only update if lastPrice is non-negative
-              if (!isNaN(parsedPrice) && parsedPrice >= 0) {
+              if (!isNaN(parsedPrice)) {
                 token.ltp = parsedPrice;
-                token.instrument = match.instrument;
-                token.tradingSymbol = match.tradingSymbol;
                 matchedCount++;
               } else {
-                console.log(`Skipped token ${token.tokenNumber} due to negative or invalid lastPrice: ${match.lastPrice}`);
+                console.log(`Invalid price for token ${token.tokenNumber}: ${match.lastPrice}`);
               }
             }
           });
