@@ -6,7 +6,7 @@ class TokenService {
     constructor() {
         this.tokens = [];
         this.jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
-        this.csvPath = "C:/Users/bhula/OneDrive/Documents/Desktop/NIshit/Mock/ScripMaster.csv";
+        this.csvPath = "C:/Users/Lenovo/Desktop/programming/src_typescript/ScripMaster.csv";
         this.indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
     }
     async getScripMasterData() {

@@ -1,7 +1,5 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
-import { get } from 'http';
-import path from 'path';
 
 type CsvRow = {
   instrument: string;
@@ -14,7 +12,7 @@ type CsvRow = {
 const indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
 
 export async function getIndexLastPrices(): Promise<Record<string, number>> {
-  const filePath = 'C:/Users/bhula/OneDrive/Documents/Desktop/NIshit/Mock/ScripMaster.csv';
+  const filePath = 'C:/Users/Lenovo/Desktop/programming/src_typescript/ScripMaster.csv';
   const filteredRows: CsvRow[] = [];
 
   // Read and filter the CSV rows

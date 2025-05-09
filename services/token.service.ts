@@ -2,7 +2,6 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
 import fetch from 'node-fetch';
-import path from 'path';
 
 interface Token {
   exchange: string;
@@ -29,7 +28,7 @@ interface ScripMasterData {
 class TokenService {
   private tokens: Token[] = [];
   private readonly jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
-  private readonly csvPath = "C:/Users/bhula/OneDrive/Documents/Desktop/NIshit/Mock/ScripMaster.csv";
+  private readonly csvPath = "C:/Users/Lenovo/Desktop/programming/src_typescript/ScripMaster.csv";
   private readonly indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
 
   private async getScripMasterData(): Promise<ScripMasterData> {
