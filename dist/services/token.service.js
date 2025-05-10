@@ -2,11 +2,15 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
 import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 class TokenService {
     constructor() {
         this.tokens = [];
         this.jsonUrl = "https://scripmasterdata.s3.ap-south-1.amazonaws.com/data.json";
-        this.csvPath = "C:/Users/Lenovo/Desktop/programming/src_typescript/ScripMaster.csv";
+        this.csvPath = join(process.cwd(), 'ScripMaster.csv');
         this.indexes = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'BANKEX', 'SENSEX'];
     }
     async getScripMasterData() {
